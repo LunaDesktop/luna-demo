@@ -1,0 +1,612 @@
+//! Testy interakcji demo — bez okna i bez Waylanda. Przepuszczają prawdziwe zdarzenia
+//! przez `ui::handle_events` i sprawdzają zmiany stanu.
+
+use libluna_core::{
+    Accent, ButtonState, Event, KeyEvent, Modifiers, Point, PointerButton, PointerEvent,
+    ScrollEvent, Size, ThemePreference, ThemeSettings,
+};
+use libluna_render::TextEngine;
+use libluna_widgets::{RadioGroup, ViewSwitcher};
+use luna_demo::ui::{self, make_nav, Demo, Popover};
+
+fn size() -> Size {
+    Size::new(900.0, 1028.0)
+}
+
+fn press(p: Point) -> Event {
+    Event::PointerButton(PointerEvent {
+        position: p,
+        button: PointerButton::Left,
+        state: ButtonState::Pressed,
+        modifiers: Modifiers::NONE,
+    })
+}
+
+/// Wysyła jedno kliknięcie do logiki demo.
+fn click(settings: &mut ThemeSettings, demo: &mut Demo, p: Point) {
+    let theme = settings.resolve_themed(false);
+    let text = TextEngine::system();
+    ui::handle_events(settings, &[press(p)], size(), &theme, &text, demo);
+}
+
+fn layout(settings: &ThemeSettings, demo: &Demo) -> ui::Layout {
+    ui::layout(size(), &settings.resolve_themed(false), demo)
+}
+
+#[test]
+fn clicking_dark_segment_sets_dark_theme() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let seg = ViewSwitcher::new(["a", "b", "c"]).segments(layout(&settings, &demo).theme_switcher)
+        [1]
+    .center();
+    click(&mut settings, &mut demo, seg);
+    assert_eq!(settings.preference(), ThemePreference::Dark);
+}
+
+#[test]
+fn clicking_accent_dot_sets_accent() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let dot = layout(&settings, &demo).accents[7].center(); // Purple
+    click(&mut settings, &mut demo, dot);
+    assert_eq!(settings.accent(), Accent::Purple);
+}
+
+#[test]
+fn widgets_entry_opens_gallery_and_appearance_returns() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve_themed(false);
+    let area = layout(&settings, &demo).sidebar;
+    let rows = ui::make_nav().rows(area, &theme);
+
+    let widgets = rows
+        .iter()
+        .find(|r| r.entry == ui::WIDGETS_NAV && r.selectable)
+        .expect("pozycja Widgety");
+    click(&mut settings, &mut demo, widgets.rect.center());
+    assert_eq!(demo.nav_selected, Some(ui::WIDGETS_NAV));
+    assert!(ui::is_gallery(&demo));
+
+    let appearance = rows.iter().find(|r| r.entry == 2).expect("pozycja Wygląd");
+    click(&mut settings, &mut demo, appearance.rect.center());
+    assert_eq!(demo.nav_selected, Some(2));
+    assert!(!ui::is_gallery(&demo));
+}
+
+#[test]
+fn clicking_nav_item_selects_it() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let item = make_nav().rows(layout(&settings, &demo).sidebar, &theme)[5]
+        .rect
+        .center(); // Sieć
+    click(&mut settings, &mut demo, item);
+    assert_eq!(demo.nav_selected, Some(5));
+}
+
+#[test]
+fn clicking_view_switcher_changes_mode() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let seg =
+        ViewSwitcher::new(["a", "b"]).segments(layout(&settings, &demo).view_switcher)[1].center();
+    click(&mut settings, &mut demo, seg);
+    assert_eq!(demo.view_mode, 1);
+}
+
+#[test]
+fn clicking_tab_selects_page() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let seg = ui::tab_bar(&demo).segments(layout(&settings, &demo).tabs, &text, &theme)[2].center();
+    click(&mut settings, &mut demo, seg);
+    assert_eq!(demo.tabs.selected(), 2);
+}
+
+#[test]
+fn about_menu_opens_bottom_sheet_and_scrim_closes_it() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Otwórz menu „☰”.
+    let burger = layout(&settings, &demo).burger.center();
+    click(&mut settings, &mut demo, burger);
+    assert_eq!(demo.popover, Some(Popover::Menu));
+
+    // Klik „O aplikacji” (indeks 4) otwiera dolny panel.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let about = ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo)
+        .map(|(panel, menu)| menu.rows(panel, &theme)[5].rect.center())
+        .unwrap();
+    click(&mut settings, &mut demo, about);
+    assert!(demo.sheet.is_open());
+
+    // Klik w tło (poza panelem) zamyka panel.
+    click(&mut settings, &mut demo, Point::new(120.0, 300.0));
+    assert!(!demo.sheet.is_open());
+}
+
+#[test]
+fn search_entry_focus_and_typing() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Klik w pole nadaje fokus.
+    let search = layout(&settings, &demo).search;
+    click(&mut settings, &mut demo, search.center());
+    assert!(demo.search.is_focused());
+
+    // Wpisanie tekstu (platforma dostarcza `text`).
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let key = Event::Key(KeyEvent {
+        keysym: 0x61,
+        keycode: 30,
+        text: Some("a".to_owned()),
+        state: ButtonState::Pressed,
+        modifiers: Modifiers::NONE,
+        repeat: false,
+    });
+    ui::handle_events(&mut settings, &[key], size(), &theme, &text, &mut demo);
+    assert_eq!(demo.search.text(), "a");
+}
+
+#[test]
+fn clicking_path_component_navigates_up() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    assert_eq!(demo.path.len(), 3);
+
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let segs = ui::path_bar(&demo).segments(layout(&settings, &demo).path, &text, &theme);
+    // Klik w element bieżący nawigację „w górę” — pierwszy widoczny składnik (np. Domowy).
+    let first = segs
+        .iter()
+        .find(|(pick, _)| *pick == Some(0))
+        .map(|(_, r)| r.center())
+        .expect("first path component is visible");
+    click(&mut settings, &mut demo, first);
+    assert_eq!(demo.path.len(), 1);
+}
+
+#[test]
+fn clicking_file_item_selects_it() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let slot = ui::item_view(&demo)
+        .slot_rect(layout(&settings, &demo).items, 1, &theme)
+        .center();
+    click(&mut settings, &mut demo, slot);
+    assert_eq!(demo.items.selected(), Some(1));
+}
+
+#[test]
+fn scrolling_files_moves_offset() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let items = layout(&settings, &demo).items;
+    let scroll = Event::Scroll(ScrollEvent {
+        position: items.center(),
+        dx: 0.0,
+        dy: 3.0,
+    });
+    ui::handle_events(&mut settings, &[scroll], size(), &theme, &text, &mut demo);
+    assert!(demo.items.scroll() > 0.0);
+}
+
+#[test]
+fn options_popover_selects_sort() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Otwórz popover „Opcje”.
+    let btn = layout(&settings, &demo).options_button.center();
+    click(&mut settings, &mut demo, btn);
+    assert_eq!(demo.popover, Some(Popover::Options));
+
+    // Klik w 3. opcję sortowania (Rozmiar).
+    let theme = settings.resolve(false);
+    let ol = ui::options_layout(size(), &theme, &layout(&settings, &demo));
+    let row = RadioGroup::new(["a", "b", "c"])
+        .row_rect(ol.radios, 2, &theme)
+        .center();
+    click(&mut settings, &mut demo, row);
+    assert_eq!(demo.sort, 2);
+    // Popover zostaje otwarty po kliknięciu wewnątrz.
+    assert_eq!(demo.popover, Some(Popover::Options));
+}
+
+#[test]
+fn clicking_sidebar_icon_toggles_and_back() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let icon = layout(&settings, &demo).sidebar_button.center();
+
+    click(&mut settings, &mut demo, icon);
+    assert!(!demo.sidebar_visible);
+
+    // Klik w to samo miejsce (layout liczy się na nowo) rozwija z powrotem.
+    click(&mut settings, &mut demo, icon);
+    assert!(demo.sidebar_visible);
+}
+
+#[test]
+fn dragging_sidebar_edge_resizes_within_bounds() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    let edge = layout(&settings, &demo).sidebar_handle.center();
+    click(&mut settings, &mut demo, edge);
+    assert!(demo.dragging_sidebar);
+
+    // Ruch wskaźnika mocno w prawo — szerokość przycięta do maksimum.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    ui::handle_events(
+        &mut settings,
+        &[Event::PointerMotion {
+            position: Point::new(5000.0, 300.0),
+            modifiers: Modifiers::NONE,
+        }],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert_eq!(demo.sidebar_width, 460.0);
+}
+
+#[test]
+fn burger_opens_menu_and_clicking_action_closes_it() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Klik „☰” otwiera popover.
+    let burger = layout(&settings, &demo).burger.center();
+    click(&mut settings, &mut demo, burger);
+    assert_eq!(demo.popover, Some(Popover::Menu));
+
+    // Klik w pierwszą pozycję menu zamyka je.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let (panel, menu) =
+        ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo).unwrap();
+    let first = menu.rows(panel, &theme)[0].rect.center();
+    click(&mut settings, &mut demo, first);
+    assert!(demo.popover.is_none());
+}
+
+#[test]
+fn clicking_outside_closes_menu() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let burger = layout(&settings, &demo).burger.center();
+    click(&mut settings, &mut demo, burger);
+    assert_eq!(demo.popover, Some(Popover::Menu));
+    // Klik daleko od panelu (środek treści) zamyka menu.
+    click(&mut settings, &mut demo, Point::new(400.0, 500.0));
+    assert!(demo.popover.is_none());
+}
+
+#[test]
+fn window_controls_are_widget_managed() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let header = layout(&settings, &demo).header;
+
+    let close = header.close.expect("window controls on the right").center();
+    click(&mut settings, &mut demo, close);
+    assert!(demo.pending_close);
+
+    let minimize = header.minimize.unwrap().center();
+    click(&mut settings, &mut demo, minimize);
+    assert!(demo.pending_minimize);
+}
+
+#[test]
+fn language_dropdown_opens_and_selects() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Otwarcie listy języków.
+    let dd = layout(&settings, &demo).language.center();
+    click(&mut settings, &mut demo, dd);
+    assert_eq!(demo.popover, Some(Popover::Language));
+
+    // Wybór ostatniej pozycji ustawia język i zamyka popover.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let (panel, menu) =
+        ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo).unwrap();
+    let last = menu.rows(panel, &theme).last().unwrap().rect.center();
+    click(&mut settings, &mut demo, last);
+    assert!(demo.popover.is_none());
+}
+
+#[test]
+fn accent_change_shows_toast_and_undo_reverts() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Zmiana akcentu pokazuje powiadomienie.
+    let dot = layout(&settings, &demo).accents[2].center();
+    click(&mut settings, &mut demo, dot);
+    assert_eq!(settings.accent(), Accent::ALL[2]);
+    assert!(demo.toast.is_open());
+
+    // Klik „Cofnij” przywraca poprzedni akcent i chowa powiadomienie.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let undo = demo
+        .toast
+        .action_rect(size(), &theme, &text)
+        .expect("toast action")
+        .center();
+    click(&mut settings, &mut demo, undo);
+    assert_eq!(settings.accent(), Accent::default());
+    assert!(!demo.toast.is_open());
+}
+
+#[test]
+fn search_without_results_shows_empty_state_that_clears() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    demo.search.set_text("zzz");
+
+    let theme = settings.resolve(false);
+    let action = ui::empty_state(&demo)
+        .expect("status page for empty search")
+        .rects(layout(&settings, &demo).items, &theme)
+        .action
+        .expect("action button")
+        .center();
+    click(&mut settings, &mut demo, action);
+    assert!(demo.search.is_empty());
+    assert!(ui::empty_state(&demo).is_none());
+}
+
+#[test]
+fn search_filters_items_and_selection_maps_to_full_list() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    demo.search.set_text("proj");
+
+    let visible = ui::visible_indices(&demo);
+    assert_eq!(
+        visible.len(),
+        1,
+        "filter should narrow the list to one item"
+    );
+    let view = ui::item_view(&demo);
+    assert_eq!(view.len(), 1);
+
+    // Klik widocznego elementu zaznacza go w pełnej liście.
+    let theme = settings.resolve(false);
+    let slot = view
+        .slot_rect(layout(&settings, &demo).items, 0, &theme)
+        .center();
+    click(&mut settings, &mut demo, slot);
+    assert_eq!(demo.items.selected(), Some(visible[0]));
+}
+
+#[test]
+fn sheet_entry_focus_and_typing() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    // Otwórz dolny panel: menu ☰ → „O aplikacji”.
+    let burger = layout(&settings, &demo).burger.center();
+    click(&mut settings, &mut demo, burger);
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let about = ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo)
+        .map(|(panel, menu)| menu.rows(panel, &theme)[5].rect.center())
+        .expect("about entry");
+    click(&mut settings, &mut demo, about);
+    assert!(demo.sheet.is_open());
+
+    // Klik pola nadaje fokus; wpisany znak trafia do `Entry`.
+    let entry = ui::sheet_entry_rect(size(), &theme).center();
+    click(&mut settings, &mut demo, entry);
+    assert!(demo.sheet_entry.is_focused());
+
+    let key = Event::Key(KeyEvent {
+        keysym: 0x41,
+        keycode: 30,
+        text: Some("A".to_owned()),
+        state: ButtonState::Pressed,
+        modifiers: Modifiers::NONE,
+        repeat: false,
+    });
+    ui::handle_events(&mut settings, &[key], size(), &theme, &text, &mut demo);
+    assert_eq!(demo.sheet_entry.text(), "A");
+}
+
+#[test]
+fn clicking_toast_body_dismisses_without_reverting() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+
+    let dot = layout(&settings, &demo).accents[1].center();
+    click(&mut settings, &mut demo, dot);
+    assert!(demo.toast.is_open());
+    let accent_after = settings.accent();
+
+    // Klik w treść powiadomienia zamyka je, ale nie cofa akcentu.
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+    let r = demo.toast.rect(size(), &theme, &text);
+    click(
+        &mut settings,
+        &mut demo,
+        Point::new(r.x() + 6.0, r.center().y),
+    );
+    assert!(!demo.toast.is_open());
+    assert_eq!(settings.accent(), accent_after);
+}
+
+#[test]
+fn choosing_style_from_menu_sets_style() {
+    // Wskaż katalog ze stylami z repozytorium (przykłady).
+    let themes =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/luna/themes");
+    std::env::set_var("LUNA_THEMES_DIR", themes);
+
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve_themed(false);
+    let text = TextEngine::system();
+
+    // ☰ → „Styl” otwiera listę stylów.
+    let burger = layout(&settings, &demo).burger.center();
+    click(&mut settings, &mut demo, burger);
+    assert_eq!(demo.popover, Some(Popover::Menu));
+    let style_item = ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo)
+        .map(|(panel, menu)| menu.rows(panel, &theme)[4].rect.center())
+        .expect("style entry");
+    click(&mut settings, &mut demo, style_item);
+    assert_eq!(demo.popover, Some(Popover::Styles));
+
+    // Wybór pierwszego stylu (Nord) ustawia go i zamyka popover.
+    let nord = ui::popover_menu(size(), &theme, &text, &layout(&settings, &demo), &demo)
+        .map(|(panel, menu)| menu.rows(panel, &theme)[1].rect.center())
+        .expect("style list");
+    click(&mut settings, &mut demo, nord);
+    assert_eq!(settings.style(), Some("nord"));
+    assert!(demo.popover.is_none());
+}
+
+fn key(keysym: u32, text: Option<String>, modifiers: Modifiers) -> Event {
+    Event::Key(KeyEvent {
+        keysym,
+        keycode: 0,
+        text,
+        state: ButtonState::Pressed,
+        modifiers,
+        repeat: false,
+    })
+}
+
+#[test]
+fn ctrl_c_copies_and_ctrl_v_pastes_into_focused_search() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+
+    let search_rect = layout(&settings, &demo).search;
+    ui::handle_events(
+        &mut settings,
+        &[press(search_rect.center())],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert!(demo.search.is_focused());
+
+    for c in ['a', 'b', 'c'] {
+        let e = key(c as u32, Some(c.to_string()), Modifiers::NONE);
+        ui::handle_events(&mut settings, &[e], size(), &theme, &text, &mut demo);
+    }
+    let ctrl = Modifiers {
+        ctrl: true,
+        ..Modifiers::NONE
+    };
+    ui::handle_events(
+        &mut settings,
+        &[key(0x61, None, ctrl)],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+
+    // Ctrl+C → tekst trafia do żądania schowka (pętla aplikacji wyśle je do Frame).
+    ui::handle_events(
+        &mut settings,
+        &[key(0x63, None, ctrl)],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert_eq!(demo.clipboard_text.as_deref(), Some("abc"));
+
+    // Ctrl+V → prośba o odczyt i zapamiętany cel.
+    ui::handle_events(
+        &mut settings,
+        &[key(0x76, None, ctrl)],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert!(demo.paste_requested);
+    assert_eq!(demo.paste_target, Some(ui::PasteTarget::Search));
+
+    // Odpowiedź platformy zastępuje zaznaczenie.
+    ui::handle_events(
+        &mut settings,
+        &[Event::Paste("xyz".to_owned())],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert_eq!(demo.search.text(), "xyz");
+}
+
+#[test]
+fn ctrl_a_selects_all_and_typing_replaces() {
+    let mut settings = ThemeSettings::default();
+    let mut demo = Demo::default();
+    let theme = settings.resolve(false);
+    let text = TextEngine::system();
+
+    // Klik w pole wyszukiwania → fokus.
+    let search_rect = layout(&settings, &demo).search;
+    ui::handle_events(
+        &mut settings,
+        &[press(search_rect.center())],
+        size(),
+        &theme,
+        &text,
+        &mut demo,
+    );
+    assert!(demo.search.is_focused());
+
+    // Wpisanie „abc”.
+    for c in ['a', 'b', 'c'] {
+        let e = key(c as u32, Some(c.to_string()), Modifiers::NONE);
+        ui::handle_events(&mut settings, &[e], size(), &theme, &text, &mut demo);
+    }
+    assert_eq!(demo.search.text(), "abc");
+
+    // Ctrl+A zaznacza wszystko…
+    let ctrl_a = key(
+        0x61,
+        None,
+        Modifiers {
+            ctrl: true,
+            ..Modifiers::NONE
+        },
+    );
+    ui::handle_events(&mut settings, &[ctrl_a], size(), &theme, &text, &mut demo);
+    assert_eq!(demo.search.selected_text(), Some("abc"));
+
+    // …a wpisanie znaku zastępuje zaznaczenie.
+    let x = key(0x58, Some("X".to_owned()), Modifiers::NONE);
+    ui::handle_events(&mut settings, &[x], size(), &theme, &text, &mut demo);
+    assert_eq!(demo.search.text(), "X");
+}
