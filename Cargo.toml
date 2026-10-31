@@ -1,6 +1,6 @@
 [package]
 name = "luna-demo"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2021"
 license = "GPL-3.0-or-later"
 rust-version = "1.80"
@@ -13,11 +13,11 @@ description = "Dokumentacja widgetów libLuny: działające przykłady, kod uży
 resolver = "2"
 
 [dependencies]
-libluna-core = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.6" }
-libluna-i18n = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.6" }
-libluna-render = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.6" }
-libluna-platform = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.6" }
-libluna-widgets = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.6" }
+libluna-core = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.7" }
+libluna-i18n = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.7" }
+libluna-render = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.7" }
+libluna-platform = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.7" }
+libluna-widgets = { git = "https://github.com/LunaDesktop/libLuna.git", version = "0.0.7" }
 tiny-skia = "0.11"
 
 [profile.dev.package."*"]
