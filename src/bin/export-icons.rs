@@ -252,6 +252,12 @@ const EXPORTS: &[Export] = &[
         aliases: &[],
     },
     Export {
+        art: Art::Icon(IconName::Refresh),
+        context: "actions",
+        name: "view-refresh",
+        aliases: &[],
+    },
+    Export {
         art: Art::Icon(IconName::Moon),
         context: "status",
         name: "weather-clear-night",

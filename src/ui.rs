@@ -1383,7 +1383,7 @@ fn draw_about_page(paint: &mut PaintCtx, rect: Rect, index: usize) {
     let (heading, body) = match index {
         0 => (tr("About"), "libLuna 0.0.1".to_owned()),
         1 => (tr("Keyboard Shortcuts"), "l · a · g · b · s · v".to_owned()),
-        _ => (tr("License"), "GPL-3.0-or-later".to_owned()),
+        _ => (tr("License"), "MPL-2.0".to_owned()),
     };
     let cx = rect.center().x;
     let cy = rect.center().y;
